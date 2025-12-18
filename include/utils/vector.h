@@ -15,11 +15,13 @@ struct Vector {
 };
 
 
-Vector* vector_create(size_t size);
+Vector vector_create(size_t size);
 
 void* vector_get(Vector* v, size_t index);
 
 void vector_push(Vector* v, void* element);
+
+void vector_set(Vector* v, size_t index, void* element);
 
 void vector_destroy(Vector* v);
 
