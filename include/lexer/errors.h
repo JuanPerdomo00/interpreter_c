@@ -1,5 +1,5 @@
-#ifndef ERRORS_H
-#define ERRORS_H
+#ifndef LEXER_ERRORS_H
+#define LEXER_ERRORS_H
 #include <stddef.h>
 typedef enum LexerErrorKind LexerErrorKind;
 
@@ -13,6 +13,7 @@ typedef struct LexerError LexerError;
 // typeError: desc: line: %d column: %d: tokens
 
 struct LexerError {
+  const char* filename;
   const char* msg;
   // describing the error
   size_t start;

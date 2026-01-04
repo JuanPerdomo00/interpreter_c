@@ -1,6 +1,7 @@
 #include "lexer/token.h"
 #include "lexer/kind.h"
 #include <stdio.h>
+#include <stdlib.h>
 
 Token token_create(TokenKind kind, StrView raw,
                    uint32_t line, uint32_t column) {
@@ -11,10 +12,14 @@ Token token_create(TokenKind kind, StrView raw,
 }
 
 void debug_token(Token *t) {
-  printf("Token(kind=%s,data=\"%.*s\", length=%d, line=%d, column=%d)\n",
+  printf("Token(kind=%s,data=\"%.*s\", length=%zu, line=%d, column=%d)\n",
          kind_debug(t->kind),
-         t->raw.len, t->raw.ptr,
+         (int)t->raw.len, t->raw.ptr,
          t->raw.len,
          t->line,
          t->column);
+}
+
+void token_string_destroy(Token *t) {
+  free(t->raw.ptr);
 }

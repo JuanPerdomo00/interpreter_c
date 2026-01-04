@@ -7,7 +7,7 @@ void test1() {
     printf("proving that can hold the values as an static array\n");
     int arr[] = {1,2,3,4,5,6,7,8,9,10};
 
-    Vector v = vector_create(sizeof(int));
+    Vector v = vector_create(sizeof(int),10);
     for(int i = 1; i < 11; ++i) {
       vector_push(&v, &i);
     }

@@ -2,280 +2,244 @@
 #include "lexer/kind.h"
 #include "lexer/token.h"
 #include "lexer/utils.h"
-#include "utils/hashmap.h"
 #include "utils/str_view.h"
 #include "utils/vector.h"
-#include <ctype.h>
+
 #include <stdbool.h>
 #include <stdio.h>
+#include <string.h>
 
-static StrView lexer_str_view(Lexer *l) {
-  return (StrView){.len = l->pos - l->token_start,
-                   .ptr = l->buffer + l->token_start};
+
+static inline bool is_digit(char c) {
+  return c >= '0' && c <= '9';
 }
 
-static Hashmap keywords;
-static bool keywords_initialized = false;
-
-static StrView key_for = {.ptr = "for", .len = 3};
-static StrView key_func = {.ptr = "func", .len = 4};
-static StrView key_if = {.ptr = "if", .len = 2};
-static StrView key_else = {.ptr = "else", .len = 4};
-static StrView key_while = {.ptr = "while", .len = 5};
-static StrView key_return = {.ptr = "return", .len = 6};
-
-static void init_keywords_if_needed(void) {
-  if (keywords_initialized)
-    return;
-
-  keywords = hashmap_create(strview_hash, strview_cmp);
-  hashmap_insert(&keywords, &key_for, &(TokenKind){TOKEN_FOR},
-                 sizeof(TokenKind));
-
-  hashmap_insert(&keywords, &key_func, &(TokenKind){TOKEN_FUNC},
-                 sizeof(TokenKind));
-
-  hashmap_insert(&keywords, &key_if, &(TokenKind){TOKEN_IF}, sizeof(TokenKind));
-
-  hashmap_insert(&keywords, &key_else, &(TokenKind){TOKEN_ELSE},
-                 sizeof(TokenKind));
-
-  hashmap_insert(&keywords, &key_while, &(TokenKind){TOKEN_WHILE},
-                 sizeof(TokenKind));
-  hashmap_insert(&keywords, &key_return, &(TokenKind){TOKEN_RETURN},
-                 sizeof(TokenKind));
-
-  keywords_initialized = true;
+static inline bool is_ident_start(char c) {
+  return (c >= 'a' && c <= 'z') ||
+         (c >= 'A' && c <= 'Z') ||
+         c == '_';
 }
 
-Lexer lexer_create(FILE *file) {
+static inline bool is_ident_continue(char c) {
+  return is_ident_start(c) || is_digit(c);
+}
+
+static inline StrView lexer_str_view(Lexer *l) {
+  return (StrView){
+      .ptr = l->buffer + l->token_start,
+      .len = l->pos - l->token_start
+  };
+}
+
+
+Lexer lexer_create(const char *filename, FILE *file) {
   fseek(file, 0, SEEK_END);
   size_t size = ftell(file);
   rewind(file);
 
-  char *buffer = malloc(size + 1);
+  ArenaAllocator *arena = arena_alloc_create(size + 1);
+  char *buffer = arena_push(arena, NULL, size + 1, alignof(char));
   fread(buffer, 1, size, file);
+  buffer[size] = '\0';
 
   return (Lexer){
-      .buffer = buffer, .length = size, .pos = 0, .column = 1, .line = 1};
+      .filename = filename,
+      .buffer = buffer,
+      .arena = arena,
+      .length = size + 1,
+      .pos = 0,
+      .line = 1,
+      .column = 1
+  };
 }
 
-void result_lexer_destroy(ResultLexer *rl) {
-  vector_destroy(&rl->errors);
-  vector_destroy(&rl->tokens);
+void lexer_destroy(Lexer *l) {
+  arena_free(l->arena);
 }
 
-LexerError lexer_error_create(LexerErrorKind kind, Lexer *l, const char *msg) {
-  return (LexerError){.msg = msg,
-                      .start = l->token_start,
-                      .length = l->pos - l->token_start,
-                      .line = l->token_line,
-                      .column = l->token_column};
+
+char lexer_peek(Lexer *l) {
+  return l->buffer[l->pos];
 }
 
 char lexer_advance(Lexer *l) {
   char c = l->buffer[l->pos++];
 
-  if (c == ' ') {
-    l->column++;
-  } else if (c == '\n') {
+  if (c == '\n') {
     l->line++;
-    l->column = 1;
-  }
+    // l->column = 1;
+  } 
 
   return c;
 }
 
-char lexer_peek(Lexer *l) { return l->buffer[l->pos]; }
-
 bool lexer_is_at_end(Lexer *l) {
-  if (l->pos >= l->length - 1) // -1 cause of \0
-    return true;
-  return false;
+  return l->pos >= l->length - 1;
 }
 
-static inline TokenResult tr_token(Token t) {
-  return (TokenResult){.kind = TR_TOKEN, .token = t};
+
+static inline bool is_trash(char c) {
+  return c == ' ' || c == '\n' || c == '\t' || c == '\r';
 }
 
-static inline TokenResult tr_error(LexerError error) {
-  return (TokenResult){.kind = TR_ERROR, .error = error};
-}
-
-Token token_make(Lexer *l, TokenKind k) {
-  return token_create(k, lexer_str_view(l), l->token_line, l->token_column);
-}
-
-TokenResult lexer_lex_identifier(Lexer *l) {
-  while (!lexer_is_at_end(l) && is_identifier(lexer_peek(l))) {
-    lexer_advance(l);
-  }
-  return tr_token(token_make(l, TOKEN_IDENTIFIER));
-}
-
-TokenResult lexer_lex_number(Lexer *l) {
-  bool seen_dot = false;
-
-  while (!lexer_is_at_end(l)) {
-    char c = lexer_peek(l);
-
-    if (isdigit(c))
-      lexer_advance(l);
-    else if (c == '.') {
-      if (seen_dot) {
-        return tr_error(lexer_error_create(
-            SYNTAX_ERROR, l, "invalid syntax in number try  \\d+.d*"));
-      }
-      seen_dot = true;
-      lexer_advance(l);
-    } else
-      break;
-  }
-  return tr_token(
-      token_make(l, seen_dot ? TOKEN_FLOAT_LITERAL : TOKEN_INT_LITERAL));
-}
-
-bool is_trash(char c) {
-  if (c == ' ' || c == '\n')
-    return true;
-  return false;
-}
 void lexer_trash(Lexer *l) {
   while (!lexer_is_at_end(l) && is_trash(lexer_peek(l))) {
     lexer_advance(l);
   }
 }
 
-TokenResult lexer_lex_add(Lexer *l) {
-  char c = lexer_peek(l);
-  Token t = token_make(l, TOKEN_PLUS);
 
-  if (c == '+') {
+static inline TokenResult tr_token(Token t) {
+  return (TokenResult){ .kind = TR_TOKEN, .token = t };
+}
+
+static inline TokenResult tr_error(LexerError e) {
+  return (TokenResult){ .kind = TR_ERROR, .error = e };
+}
+
+Token token_make(Lexer *l, TokenKind kind) {
+  return token_create(kind, lexer_str_view(l),
+                      l->token_line, l->token_column);
+}
+
+/* ===================================================== */
+/* Lexers                                                */
+/* ===================================================== */
+
+TokenResult lexer_lex_identifier(Lexer *l) {
+  lexer_advance(l); // consume first letter
+
+  while (!lexer_is_at_end(l) && is_ident_continue(lexer_peek(l))) {
     lexer_advance(l);
-    t = token_make(l, TOKEN_PLUS_PLUS);
   }
 
-  return tr_token(t);
+  return tr_token(token_make(l, TOKEN_IDENTIFIER));
+}
+
+TokenResult lexer_lex_number(Lexer *l) {
+  while (!lexer_is_at_end(l) && is_digit(lexer_peek(l))) {
+    lexer_advance(l);
+  }
+
+  return tr_token(token_make(l, TOKEN_INT_LITERAL));
+}
+
+// operators
+
+TokenResult lexer_lex_add(Lexer *l) {
+  lexer_advance(l); // consume '+'
+
+  if (!lexer_is_at_end(l) && lexer_peek(l) == '+') {
+    lexer_advance(l);
+    return tr_token(token_make(l, TOKEN_PLUS_PLUS));
+  }
+
+  return tr_token(token_make(l, TOKEN_PLUS));
 }
 
 TokenResult lexer_lex_minus(Lexer *l) {
-  char c = lexer_peek(l);
-  Token t = token_make(l, TOKEN_MINUS);
+  lexer_advance(l);
 
-  if (c == '-') {
+  if (!lexer_is_at_end(l) && lexer_peek(l) == '-') {
     lexer_advance(l);
-    t = token_make(l, TOKEN_MINUS_MINUS);
+    return tr_token(token_make(l, TOKEN_MINUS_MINUS));
   }
 
-  return tr_token(t);
+  return tr_token(token_make(l, TOKEN_MINUS));
 }
 
-TokenResult lexer_lex_equal(Lexer *l) {
-  char c = lexer_peek(l);
-  Token t = token_make(l, TOKEN_ASSIGN);
-
-  if (c == '=') {
-    lexer_advance(l);
-    t = token_make(l, TOKEN_EQUAL);
-  }
-
-  return tr_token(t);
-}
-
-TokenResult lexer_lex_div(Lexer *l) {
-  char c = lexer_peek(l);
-  Token t = token_make(l, TOKEN_SLASH);
-
-  if (c == '/') {
-    lexer_advance(l);
-    t = token_make(l, TOKEN_SLASH_SLASH);
-  }
-
-  return tr_token(t);
-}
 
 TokenResult lexer_lex_mul(Lexer *l) {
-  char c = lexer_peek(l);
-  Token t = token_make(l, TOKEN_STAR);
+  lexer_advance(l);
 
-  if (c == '*') {
+  if (!lexer_is_at_end(l) && lexer_peek(l) == '*') {
     lexer_advance(l);
-    t = token_make(l, TOKEN_STAR_STAR);
+    return tr_token(token_make(l, TOKEN_STAR_STAR));
   }
+
+  return tr_token(token_make(l, TOKEN_STAR));
 }
 
-TokenResult lexer_next_token(Lexer *l) {
-  if (lexer_is_at_end(l)) {
-    return tr_token(
-        token_create(TOKEN_EOF, lexer_str_view(l), l->line, l->column));
+
+TokenResult lexer_lex_div(Lexer *l) {
+  lexer_advance(l);
+
+  if (!lexer_is_at_end(l) && lexer_peek(l) == '/') {
+    lexer_advance(l);
+    return tr_token(token_make(l, TOKEN_SLASH_SLASH));
   }
 
-  if (is_trash(lexer_peek(l)))
-    lexer_trash(l);
+  return tr_token(token_make(l, TOKEN_SLASH));
+}
+
+
+
+// dispatcher
+TokenResult lexer_next_token(Lexer *l) {
+  lexer_trash(l);
+
   l->token_start = l->pos;
   l->token_line = l->line;
   l->token_column = l->column;
 
-  char c = lexer_advance(l);
+  if (lexer_is_at_end(l)) {
+    l->token_start = l->pos;
+    return tr_token(token_make(l, TOKEN_EOF));
+  }
 
-  if (is_identifier(c))
-    return lexer_lex_identifier(l);
+  char c = lexer_peek(l);
 
-  if (isdigit(c))
-    return lexer_lex_number(l);
+  if (is_digit(c))        return lexer_lex_number(l);
+  if (is_ident_start(c)) return lexer_lex_identifier(l);
 
   switch (c) {
-  case '+':
-    return lexer_lex_add(l);
-  case '-':
-    return lexer_lex_minus(l);
-  case '=':
-    return lexer_lex_equal(l);
-  case '/':
-    return lexer_lex_div(l);
-  case '*':
-    return lexer_lex_mul(l);
-  case '(':
-    return tr_token(token_make(l, TOKEN_LPAREN));
-  case ')':
-    return tr_token(token_make(l, TOKEN_RPAREN));
-  case '{':
-    return tr_token(token_make(l, TOKEN_LBRACE));
-  case '}':
-    return tr_token(token_make(l, TOKEN_RBRACE));
-  default:
-    return tr_error(
-        lexer_error_create(SYNTAX_ERROR, l, "doesnt recognize that token"));
+    case '+': return lexer_lex_add(l);
+    case '-': return lexer_lex_minus(l);
+    case '*': return lexer_lex_mul(l);
+    case '/': return lexer_lex_div(l);
+
+    case '(':
+      lexer_advance(l);
+      return tr_token(token_make(l, TOKEN_LPAREN));
+
+    case ')':
+      lexer_advance(l);
+      return tr_token(token_make(l, TOKEN_RPAREN));
+
+    case ';':
+      lexer_advance(l);
+      return tr_token(token_make(l, TOKEN_SEMICOLON));
+
+    default:
+      return tr_error((LexerError){
+          .msg = "unknown character",
+          .line = l->line,
+          .column = l->column
+      });
   }
 }
 
-ResultLexer create_result_lexer() {
-  return (ResultLexer){.tokens = vector_create(sizeof(Token)),
-                       .errors = vector_create(sizeof(LexerError))};
-}
 
+// tokenizer
 ResultLexer lexer_tokenize(Lexer *l) {
-  init_keywords_if_needed();
-  ResultLexer r = create_result_lexer();
+  ResultLexer r;
+  r.tokens = vector_create(sizeof(Token),5);
+  r.errors = vector_create(sizeof(LexerError),5);
+
   while (true) {
     TokenResult tr = lexer_next_token(l);
-    lexer_trash(l);
+
     if (tr.kind == TR_ERROR) {
       vector_push(&r.errors, &tr.error);
       continue;
     }
-    if (tr.kind == TR_TOKEN && tr.token.kind == TOKEN_EOF)
+
+    if (tr.token.kind == TOKEN_EOF)
       break;
 
-    if (tr.kind == TR_TOKEN && tr.token.kind == TOKEN_IDENTIFIER) {
-      tr.token.kind = hashmap_contains(&keywords, &tr.token.raw)
-                          ? *(TokenKind *)hashmap_get(&keywords, &tr.token.raw)
-                          : tr.token.kind;
-    }
     vector_push(&r.tokens, &tr.token);
   }
 
   return r;
 }
 
-void lexer_destroy(Lexer *l) { free(l->buffer); }

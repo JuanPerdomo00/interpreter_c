@@ -2,15 +2,15 @@
 #define LEXER_H
 #include "lexer/errors.h"
 #include "lexer/token.h"
+#include "memory/arena_allocator.h"
 #include "utils/vector.h"
-#include <stdio.h>
 #include <stdbool.h>
+#include <stdio.h>
 
 typedef struct Lexer Lexer;
 
-
 struct Lexer {
-  char* buffer;
+  char *buffer;
   size_t token_start;
   size_t token_line;
   size_t token_column;
@@ -18,9 +18,9 @@ struct Lexer {
   size_t pos;
   size_t line;
   size_t column;
+  const char *filename;
+  ArenaAllocator *arena;
 };
-
-
 
 typedef struct ResultLexer ResultLexer;
 
@@ -29,43 +29,39 @@ struct ResultLexer {
   Vector errors; // LexerError
 };
 
-void result_lexer_destroy(ResultLexer* rl);
-
+void result_lexer_destroy(ResultLexer *rl);
 
 typedef enum TokenResultKind TokenResultKind;
 
 enum TokenResultKind {
   TR_TOKEN,
-  TR_ERROR, 
+  TR_ERROR,
 };
 
 typedef struct TokenResult TokenResult;
 struct TokenResult {
   TokenResultKind kind;
   union {
-  Token token;
-  LexerError error;
+    Token token;
+    LexerError error;
   };
 };
 
-Lexer lexer_create(FILE* file);
+Lexer lexer_create(const char *filename, FILE *file);
 
-
-
-Token token_make(Lexer* l, TokenKind k);
+Token token_make(Lexer *l, TokenKind k);
 
 TokenResult lexer_lex_identifier(Lexer *l);
 
-TokenResult lexer_lex_number(Lexer* l);
+TokenResult lexer_lex_number(Lexer *l);
 
-TokenResult lexer_next_token(Lexer* l);
+TokenResult lexer_next_token(Lexer *l);
 
 ResultLexer create_result_lexer();
 
 // returns a vector of tokens
-ResultLexer lexer_tokenize(Lexer* l);
+ResultLexer lexer_tokenize(Lexer *l);
 
-void lexer_destroy(Lexer* l);
-
+void lexer_destroy(Lexer *l);
 
 #endif

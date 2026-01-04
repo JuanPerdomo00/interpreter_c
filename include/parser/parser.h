@@ -1,24 +1,35 @@
 #ifndef PARSER_H
 #define PARSER_H
-#include <stdbool.h>
 
+#include <stdbool.h>
+#include "lexer/lexer.h"
 #include "lexer/token.h"
-#include "utils/vector.h"
+#include "memory/arena_allocator.h"
+
+
 typedef struct Parser Parser;
 
-
 struct Parser {
-  // Tokens
-  Vector Tokens;
-  size_t pos;
+  Lexer *lexer;              
+  Token current;             
+  ArenaAllocator *arena;
+  bool error_reported;
 };
 
 
-bool parser_is_at_end(Parser* p);
+Parser parser_create(Lexer *lexer);
+void   parser_destroy(Parser *p);
 
-Token* parser_peek(Parser* p);
 
-Token* parser_advance(Parser* p);
+bool   parser_is_at_end(Parser *p);
+Token *parser_peek(Parser *p);
+void   parser_advance(Parser *p);
 
+
+void parser_error(Parser *p, const char *msg);
+
+
+void parser_sync(Parser *p);
 
 #endif
+

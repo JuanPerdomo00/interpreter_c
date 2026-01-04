@@ -15,7 +15,7 @@ struct Vector {
 };
 
 
-Vector vector_create(size_t size);
+Vector vector_create(size_t size, size_t capacity);
 
 void* vector_get(Vector* v, size_t index);
 

@@ -3,9 +3,9 @@
 #include <string.h>
 #include <stdio.h>
 
-Vector vector_create(size_t size) {
+Vector vector_create(size_t size, size_t capacity) {
   return (Vector){
-      .size = size, .data = malloc(size * 4), .capacity = 4, .length = 0};
+      .size = size, .data = malloc(size * capacity), .capacity = capacity, .length = 0};
 }
 
 void *vector_get(Vector *v, size_t index) {
@@ -25,7 +25,6 @@ void vector_push(Vector *v, void *element) {
 
 void vector_set(Vector *v, size_t index, void *element) {
 
-  // index has to be less than the size
   void *dest = vector_get(v, index);
 
   memcpy(dest, element, v->size);

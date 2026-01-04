@@ -39,11 +39,12 @@ enum TokenKind {
     TOKEN_MINUS_MINUS,
 
     // Delimitadores
+    TOKEN_COMMA,
     TOKEN_LPAREN,
     TOKEN_RPAREN,
     TOKEN_LBRACE,
     TOKEN_RBRACE,
-    TOKEN_SEMICOLON
+    TOKEN_SEMICOLON,
 };
 
 
